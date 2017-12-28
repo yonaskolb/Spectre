@@ -28,10 +28,6 @@ open class Expectation<T> : ExpectationType {
   let line: Int
   let function: String
 
-  open var to: Expectation<T> {
-    return self
-  }
-
   init(file: String, line: Int, function: String, expression: @escaping () throws -> ValueType?) {
     self.file = file
     self.line = line
@@ -42,6 +38,46 @@ open class Expectation<T> : ExpectationType {
   open func failure(_ reason: String) -> FailureType {
     return ExpectationFailure(reason: reason, file: file, line: line, function: function)
   }
+}
+
+extension ExpectationType {
+  public var to: ExpectTo<Self> {
+    return ExpectTo(expectation: self)
+  }
+}
+
+public class ExpectTo<E: ExpectationType> {
+
+  public var expression: () throws -> E.ValueType? { return expectation.expression }
+  open let expectation: E
+
+  init(expectation: E) {
+    self.expectation = expectation
+  }
+
+  public func failure(_ reason: String) -> FailureType {
+    return expectation.failure(reason)
+  }
+
+  public var not: ExpectNotTo<E> {
+    return ExpectNotTo(expectation: self.expectation)
+  }
+
+}
+
+public class ExpectNotTo<E: ExpectationType> {
+
+  public var expression: () throws -> E.ValueType? { return expectation.expression }
+  open let expectation: E
+
+  init(expectation: E) {
+    self.expectation = expectation
+  }
+
+  public func failure(_ reason: String) -> FailureType {
+    return expectation.failure(reason)
+  }
+
 }
 
 public func expect<T>( _ expression: @autoclosure @escaping () throws -> T?, file: String = #file, line: Int = #line, function: String = #function) -> Expectation<T> {
@@ -117,14 +153,16 @@ public func != <Key, Value: Equatable> (lhs: Expectation<[Key: Value]>, rhs: [Ke
 
 // MARK: Nil
 
-extension ExpectationType {
+extension ExpectTo {
   public func beNil() throws {
     let value = try expression()
     if value != nil {
       throw failure("value is not nil")
     }
   }
-  public func beNotNil() throws {
+}
+extension ExpectNotTo {
+  public func beNil() throws {
     let value = try expression()
     if value == nil {
       throw failure("value is nil")
@@ -134,7 +172,7 @@ extension ExpectationType {
 
 // MARK: Boolean
 
-extension ExpectationType where ValueType == Bool {
+extension ExpectTo where E.ValueType == Bool {
   public func beTrue() throws {
     let value = try expression()
     if value != true {
@@ -152,7 +190,7 @@ extension ExpectationType where ValueType == Bool {
 
 // Mark: Types
 
-extension ExpectationType {
+extension ExpectTo {
   public func beOfType(_ expectedType: Any.Type) throws {
     guard let value = try expression() else { throw failure("cannot determine type: expression threw an error or value is nil") }
     let valueType = Mirror(reflecting: value).subjectType
@@ -167,8 +205,17 @@ extension ExpectationType {
 extension ExpectationType {
 
   public func toThrow() throws {
-    try `throw`()
+    try to.`throw`()
   }
+  public func toThrow<T: Equatable>(_ error: T) throws {
+    try to.`throw`(error)
+  }
+  public func toNotThrow() throws {
+    try to.not.`throw`()
+  }
+}
+
+extension ExpectTo {
 
   public func `throw`() throws {
     var didThrow = false
@@ -182,10 +229,6 @@ extension ExpectationType {
     if !didThrow {
       throw failure("expression did not throw an error")
     }
-  }
-
-  public func toThrow<T: Equatable>(_ error: T) throws {
-    try `throw`(error)
   }
 
   public func `throw`<T: Equatable>(_ error: T) throws {
@@ -210,24 +253,23 @@ extension ExpectationType {
     }
   }
 
-  public func notThrow() throws {
+}
+
+extension ExpectNotTo {
+
+  public func `throw`() throws {
     var didThrow = false
-    
+
     do {
       _ = try expression()
     } catch {
       didThrow = true
     }
-    
+
     if didThrow {
       throw failure("expression did throw an error")
     }
   }
-  
-  public func toNotThrow() throws {
-    try notThrow()
-  }
-
 }
 
 // MARK: Comparable
